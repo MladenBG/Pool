@@ -14,11 +14,19 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.json.JSONArray
+import org.json.JSONObject
 
 enum class GameMode {
     PLAYER_VS_BOT,
     PLAYER_VS_PLAYER,
-    PRACTICE
+    PRACTICE,
+    ONLINE_MULTIPLAYER
 }
 
 enum class GameState {
@@ -31,6 +39,13 @@ enum class CueStyle {
     CLASSIC_MAHOGANY,
     GOLDEN_DRAGON,
     STEALTH_CARBON
+}
+
+enum class BallGroup {
+    SOLID,
+    STRIPE,
+    BLACK,
+    CUE
 }
 
 data class PoolBall(
@@ -103,6 +118,28 @@ class GameEngine {
     val balls = mutableStateListOf<PoolBall>()
     val eventLogs = mutableStateListOf<String>()
 
+    // Solids vs Stripes properties
+    var player1Group by mutableStateOf<BallGroup?>(null)
+    var player2Group by mutableStateOf<BallGroup?>(null)
+    val pocketedGroupsThisTurn = mutableStateListOf<BallGroup>()
+
+    // Online Multiplayer properties
+    var onlineStatus by mutableStateOf<String?>(null)
+    var myRole by mutableStateOf<String?>(null) // "P1" or "P2"
+    private var webSocket: WebSocket? = null
+    private val client = OkHttpClient()
+    private var wasMyShot = false
+
+    fun getBallGroup(ballId: Int): BallGroup {
+        return when (ballId) {
+            0 -> BallGroup.CUE
+            8 -> BallGroup.BLACK
+            in 1..7 -> BallGroup.SOLID
+            in 9..15 -> BallGroup.STRIPE
+            else -> BallGroup.SOLID
+        }
+    }
+
     var currentMode by mutableStateOf(GameMode.PLAYER_VS_BOT)
     var gameState by mutableStateOf(GameState.MENU)
     var isPlayerTurn by mutableStateOf(true)
@@ -141,10 +178,142 @@ class GameEngine {
         wasCueBallPocketedThisTurn = false
         objectBallsPocketedThisTurn = 0
         is8BallPocketedThisTurn = false
+        player1Group = null
+        player2Group = null
+        pocketedGroupsThisTurn.clear()
         eventLogs.clear()
         addLog("Match Started: ${mode.name.replace("_", " ")}")
         resetBotAnimationState()
-        setupRack()
+        
+        disconnectWebSocket()
+        if (mode == GameMode.ONLINE_MULTIPLAYER) {
+            connectWebSocket()
+        } else {
+            setupRack()
+        }
+    }
+
+    private fun connectWebSocket() {
+        onlineStatus = "Connecting to matchmaking server..."
+        val request = Request.Builder()
+            .url("ws://10.0.2.2:8080") // Local server IP
+            .build()
+
+        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                scope.launch(Dispatchers.Main) {
+                    onlineStatus = "Connected! Waiting for opponent..."
+                    addLog("Connected to server. Matching...")
+                }
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                scope.launch(Dispatchers.Main) {
+                    try {
+                        val json = JSONObject(text)
+                        val type = json.optString("type")
+                        when (type) {
+                            "waiting" -> {
+                                onlineStatus = "Waiting for opponent..."
+                            }
+                            "start" -> {
+                                myRole = json.getString("role")
+                                isPlayerTurn = json.getBoolean("turn")
+                                onlineStatus = "Matched! You are $myRole"
+                                addLog("Matched! You are $myRole. ${if (isPlayerTurn) "Your turn." else "Opponent's turn."}")
+                                setupRack()
+                            }
+                            "strike" -> {
+                                val vx = json.getDouble("vx").toFloat()
+                                val vy = json.getDouble("vy").toFloat()
+                                applyReceivedStrike(vx, vy)
+                            }
+                            "sync" -> {
+                                val isOpponentNextTurn = json.getBoolean("isPlayerTurn")
+                                val p1GroupStr = json.optString("player1Group", "null")
+                                val p2GroupStr = json.optString("player2Group", "null")
+                                
+                                player1Group = if (p1GroupStr == "null" || p1GroupStr.isEmpty()) null else BallGroup.valueOf(p1GroupStr)
+                                player2Group = if (p2GroupStr == "null" || p2GroupStr.isEmpty()) null else BallGroup.valueOf(p2GroupStr)
+
+                                val gameStateStr = json.optString("gameState", "PLAYING")
+                                gameState = GameState.valueOf(gameStateStr)
+                                val winnerMsgStr = json.optString("winnerMessage", "null")
+                                winnerMessage = if (winnerMsgStr == "null") null else winnerMsgStr
+
+                                val ballsArray = json.getJSONArray("balls")
+                                val updatedBalls = mutableListOf<PoolBall>()
+                                for (i in 0 until ballsArray.length()) {
+                                    val bJson = ballsArray.getJSONObject(i)
+                                    val id = bJson.getInt("id")
+                                    val x = bJson.optDouble("x", 500.0).toFloat()
+                                    val y = bJson.optDouble("y", 1500.0).toFloat()
+                                    val vx = bJson.optDouble("vx", 0.0).toFloat()
+                                    val vy = bJson.optDouble("vy", 0.0).toFloat()
+                                    val color = bJson.getLong("color")
+                                    val isCueBall = bJson.getBoolean("isCueBall")
+                                    updatedBalls.add(PoolBall(id, x, y, vx, vy, color, isCueBall))
+                                }
+
+                                balls.clear()
+                                balls.addAll(updatedBalls)
+
+                                isPlayerTurn = if (myRole == "P1") isOpponentNextTurn else !isOpponentNextTurn
+                                addLog("Opponent settled turn. Your turn!")
+                                isSimulationRunning = false
+                            }
+                            "game_canceled" -> {
+                                winnerMessage = "Game Canceled: Opponent left!"
+                                gameState = GameState.GAME_OVER
+                                addLog("Game Canceled: Opponent left!")
+                                disconnectWebSocket()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                scope.launch(Dispatchers.Main) {
+                    onlineStatus = "Connection Failed!"
+                    addLog("Network Error: Could not connect to server.")
+                }
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                scope.launch(Dispatchers.Main) {
+                    addLog("Connection closed.")
+                }
+            }
+        })
+    }
+
+    private fun disconnectWebSocket() {
+        webSocket?.close(1000, "Goodbye")
+        webSocket = null
+        myRole = null
+        onlineStatus = null
+    }
+
+    private fun applyReceivedStrike(vx: Float, vy: Float) {
+        val cueBallIndex = balls.indexOfFirst { it.isCueBall }
+        if (cueBallIndex != -1) {
+            pocketedGroupsThisTurn.clear()
+            addLog("Opponent strikes the cue ball!")
+            balls[cueBallIndex] = balls[cueBallIndex].copy(
+                vx = vx,
+                vy = vy
+            )
+            isSimulationRunning = true
+            isBreakShot = false
+            wasMyShot = false
+            wasCueBallPocketedThisTurn = false
+            objectBallsPocketedThisTurn = 0
+            is8BallPocketedThisTurn = false
+            SoundManager.playCollisionSound(0.7f)
+        }
     }
 
     private fun addLog(msg: String) {
@@ -159,13 +328,31 @@ class GameEngine {
         // White Cue Ball
         balls.add(PoolBall(0, 500f, 1500f, 0f, 0f, 0xFFFFFFFF, true))
 
-        // 8-Ball Rack (Simplified for demonstration)
-        balls.add(PoolBall(1, 500f, 500f, 0f, 0f, 0xFFEAB308)) // Yellow
-        balls.add(PoolBall(2, 470f, 440f, 0f, 0f, 0xFFEF4444)) // Red
-        balls.add(PoolBall(3, 530f, 440f, 0f, 0f, 0xFF000000)) // 8-Ball Black
-        balls.add(PoolBall(4, 440f, 380f, 0f, 0f, 0xFF3B82F6)) // Blue
-        balls.add(PoolBall(5, 500f, 380f, 0f, 0f, 0xFFF97316)) // Orange
-        balls.add(PoolBall(6, 560f, 380f, 0f, 0f, 0xFF22C55E)) // Green
+        // Standard 15-Ball Triangle Rack
+        // Row 1 (Apex):
+        balls.add(PoolBall(1, 500f, 500f, 0f, 0f, 0xFFEAB308)) // Solid Yellow
+        
+        // Row 2:
+        balls.add(PoolBall(2, 470f, 440f, 0f, 0f, 0xFF3B82F6)) // Solid Blue
+        balls.add(PoolBall(9, 530f, 440f, 0f, 0f, 0xFFEAB308)) // Stripe Yellow
+        
+        // Row 3:
+        balls.add(PoolBall(10, 440f, 380f, 0f, 0f, 0xFF3B82F6)) // Stripe Blue
+        balls.add(PoolBall(8, 500f, 380f, 0f, 0f, 0xFF000000)) // Black 8-Ball
+        balls.add(PoolBall(3, 560f, 380f, 0f, 0f, 0xFFEF4444)) // Solid Red
+        
+        // Row 4:
+        balls.add(PoolBall(11, 410f, 320f, 0f, 0f, 0xFFEF4444)) // Stripe Red
+        balls.add(PoolBall(4, 470f, 320f, 0f, 0f, 0xFF8B5CF6)) // Solid Purple
+        balls.add(PoolBall(12, 530f, 320f, 0f, 0f, 0xFF8B5CF6)) // Stripe Purple
+        balls.add(PoolBall(5, 590f, 320f, 0f, 0f, 0xFFF97316)) // Solid Orange
+        
+        // Row 5:
+        balls.add(PoolBall(6, 380f, 260f, 0f, 0f, 0xFF22C55E)) // Solid Green
+        balls.add(PoolBall(13, 440f, 260f, 0f, 0f, 0xFFF97316)) // Stripe Orange
+        balls.add(PoolBall(7, 500f, 260f, 0f, 0f, 0xFFB45309)) // Solid Maroon/Brown
+        balls.add(PoolBall(14, 560f, 260f, 0f, 0f, 0xFF22C55E)) // Stripe Green
+        balls.add(PoolBall(15, 620f, 260f, 0f, 0f, 0xFFB45309)) // Stripe Maroon/Brown
     }
 
     private fun startPhysicsLoop() {
@@ -208,6 +395,7 @@ class GameEngine {
                 var cueBallScratched = false
                 var objectBallsPocketed = 0
                 var is8BallPocketed = false
+                val localPocketedGroups = mutableListOf<BallGroup>()
 
                 val pockets = listOf(
                     Pair(0f, 0f), Pair(1000f, 0f), // Corners top
@@ -245,10 +433,11 @@ class GameEngine {
                     if (isPocketed) {
                         if (originalBall.isCueBall) {
                             cueBallScratched = true
-                        } else if (originalBall.id == 3) {
+                        } else if (originalBall.id == 8) {
                             is8BallPocketed = true
                         } else {
                             objectBallsPocketed++
+                            localPocketedGroups.add(getBallGroup(originalBall.id))
                         }
                     } else {
                         updatedBalls.add(originalBall.copy(x = x, y = y, vx = vx, vy = vy))
@@ -270,6 +459,7 @@ class GameEngine {
                     }
                     if (objectBallsPocketed > 0) {
                         objectBallsPocketedThisTurn += objectBallsPocketed
+                        pocketedGroupsThisTurn.addAll(localPocketedGroups)
                         addLog("Pocketed $objectBallsPocketed object ball(s)!")
                     }
                     if (is8BallPocketed) {
@@ -279,7 +469,44 @@ class GameEngine {
 
                     if (isSimulationRunning && !ballsMoving) {
                         isSimulationRunning = false
-                        handleTurnTransition()
+                        if (currentMode == GameMode.ONLINE_MULTIPLAYER) {
+                            if (wasMyShot) {
+                                handleTurnTransition()
+                                // Send synchronization packet to opponent
+                                try {
+                                    val syncObj = JSONObject()
+                                    syncObj.put("type", "sync")
+                                    syncObj.put("player1Group", player1Group?.name ?: "null")
+                                    syncObj.put("player2Group", player2Group?.name ?: "null")
+                                    syncObj.put("gameState", gameState.name)
+                                    syncObj.put("winnerMessage", winnerMessage ?: "null")
+
+                                    val nextP1Turn = if (myRole == "P1") isPlayerTurn else !isPlayerTurn
+                                    syncObj.put("isPlayerTurn", nextP1Turn)
+
+                                    val ballsArray = JSONArray()
+                                    for (ball in balls) {
+                                        val bJson = JSONObject()
+                                        bJson.put("id", ball.id)
+                                        bJson.put("x", ball.x)
+                                        bJson.put("y", ball.y)
+                                        bJson.put("vx", ball.vx)
+                                        bJson.put("vy", ball.vy)
+                                        bJson.put("color", ball.color)
+                                        bJson.put("isCueBall", ball.isCueBall)
+                                        ballsArray.put(bJson)
+                                    }
+                                    syncObj.put("balls", ballsArray)
+                                    webSocket?.send(syncObj.toString())
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            } else {
+                                // We didn't shoot, so just stop simulation and wait for the sync packet to correct ball positions
+                            }
+                        } else {
+                            handleTurnTransition()
+                        }
                     } else if (ballsMoving) {
                         isSimulationRunning = true
                     }
@@ -291,28 +518,64 @@ class GameEngine {
     }
 
     private fun handleTurnTransition() {
-        val remainingObjectBalls = balls.count { !it.isCueBall && it.id != 3 }
+        val remainingObjectBalls = balls.count { !it.isCueBall && it.id != 8 }
+
+        // 1. Assign groups if table was open and a group ball was pocketed
+        if (currentMode != GameMode.PRACTICE && player1Group == null) {
+            val firstPocketed = pocketedGroupsThisTurn.firstOrNull { it == BallGroup.SOLID || it == BallGroup.STRIPE }
+            if (firstPocketed != null) {
+                if (isPlayerTurn) {
+                    player1Group = firstPocketed
+                    player2Group = if (firstPocketed == BallGroup.SOLID) BallGroup.STRIPE else BallGroup.SOLID
+                } else {
+                    player2Group = firstPocketed
+                    player1Group = if (firstPocketed == BallGroup.SOLID) BallGroup.STRIPE else BallGroup.SOLID
+                }
+                addLog("Groups: ${if (isPlayerTurn) "Player 1" else "Bot"} is ${firstPocketed.name}s!")
+            }
+        }
+
+        val updatedCurrentGroup = if (isPlayerTurn) player1Group else player2Group
+        val opponentGroup = if (isPlayerTurn) {
+            if (player1Group == BallGroup.SOLID) BallGroup.STRIPE else BallGroup.SOLID
+        } else {
+            if (player2Group == BallGroup.SOLID) BallGroup.STRIPE else BallGroup.SOLID
+        }
 
         if (is8BallPocketedThisTurn) {
             gameState = GameState.GAME_OVER
-            if (remainingObjectBalls == 0 && !wasCueBallPocketedThisTurn) {
+            val remainingOwnBalls = if (updatedCurrentGroup != null) {
+                balls.count { !it.isCueBall && getBallGroup(it.id) == updatedCurrentGroup }
+            } else {
+                1 // table was open -> illegal 8-ball pocketing
+            }
+
+            if (remainingOwnBalls == 0 && !wasCueBallPocketedThisTurn) {
                 winnerMessage = when (currentMode) {
                     GameMode.PRACTICE -> "Practice Completed! You Pocketed all balls."
                     GameMode.PLAYER_VS_BOT -> if (isPlayerTurn) "Congratulations! You Win!" else "Bot Wins! Better luck next time."
                     GameMode.PLAYER_VS_PLAYER -> if (isPlayerTurn) "Player 1 Wins!" else "Player 2 Wins!"
+                    GameMode.ONLINE_MULTIPLAYER -> if (isPlayerTurn) "Congratulations! You Win!" else "Opponent Wins! Better luck next time."
                 }
             } else {
                 winnerMessage = when (currentMode) {
                     GameMode.PRACTICE -> "Game Over: 8-Ball Pocketed early!"
                     GameMode.PLAYER_VS_BOT -> if (isPlayerTurn) "Game Over: You pocketed 8-Ball early! Bot Wins!" else "Game Over: Bot pocketed 8-Ball early! You Win!"
                     GameMode.PLAYER_VS_PLAYER -> if (isPlayerTurn) "Game Over: Player 1 pocketed 8-Ball early! Player 2 Wins!" else "Game Over: Player 2 pocketed 8-Ball early! Player 1 Wins!"
+                    GameMode.ONLINE_MULTIPLAYER -> if (isPlayerTurn) "Game Over: You pocketed 8-Ball early! Opponent Wins!" else "Game Over: Opponent pocketed 8-Ball early! You Win!"
                 }
             }
             return
         }
 
-        if (remainingObjectBalls == 0) {
-            addLog("All object balls pocketed! Target the 8-Ball.")
+        val remainingOwnBallsCount = if (updatedCurrentGroup != null) {
+            balls.count { !it.isCueBall && getBallGroup(it.id) == updatedCurrentGroup }
+        } else {
+            remainingObjectBalls
+        }
+
+        if (remainingOwnBallsCount == 0 && updatedCurrentGroup != null) {
+            addLog("Group cleared! Target the 8-Ball.")
         }
 
         if (currentMode == GameMode.PRACTICE) {
@@ -322,7 +585,19 @@ class GameEngine {
             return
         }
 
-        val keepTurn = objectBallsPocketedThisTurn > 0 && !wasCueBallPocketedThisTurn
+        val pocketedOwn = updatedCurrentGroup != null && pocketedGroupsThisTurn.contains(updatedCurrentGroup)
+        val pocketedOpponent = updatedCurrentGroup != null && pocketedGroupsThisTurn.contains(opponentGroup)
+
+        val keepTurn = if (updatedCurrentGroup != null) {
+            // Standard rule: must pocket own ball, and NOT pocket opponent's ball, and not scratch
+            pocketedOwn && !pocketedOpponent && !wasCueBallPocketedThisTurn
+        } else {
+            objectBallsPocketedThisTurn > 0 && !wasCueBallPocketedThisTurn
+        }
+
+        if (updatedCurrentGroup != null && pocketedOpponent && !wasCueBallPocketedThisTurn) {
+            addLog("Opponent's ball pocketed! Turn passes.")
+        }
 
         if (keepTurn) {
             addLog(if (currentMode == GameMode.PLAYER_VS_BOT && !isPlayerTurn) "Bot keeps turn!" else if (isPlayerTurn) "Player 1 keeps turn!" else "Player 2 keeps turn!")
@@ -348,11 +623,26 @@ class GameEngine {
         if (gameState != GameState.PLAYING || isSimulationRunning) return
         val cueBallIndex = balls.indexOfFirst { it.isCueBall }
         if (cueBallIndex != -1 && (isPlayerTurn || currentMode == GameMode.PRACTICE)) {
+            pocketedGroupsThisTurn.clear()
             addLog(if (currentMode == GameMode.PLAYER_VS_PLAYER) {
                 if (isPlayerTurn) "Player 1 strikes!" else "Player 2 strikes!"
             } else {
                 "Player strikes!"
             })
+
+            wasMyShot = true
+            if (currentMode == GameMode.ONLINE_MULTIPLAYER) {
+                try {
+                    val json = JSONObject()
+                    json.put("type", "strike")
+                    json.put("vx", vx)
+                    json.put("vy", vy)
+                    webSocket?.send(json.toString())
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             balls[cueBallIndex] = balls[cueBallIndex].copy(
                 vx = vx,
                 vy = vy
@@ -368,7 +658,14 @@ class GameEngine {
         if (gameState != GameState.PLAYING) return
         val cueBall = balls.find { it.isCueBall } ?: return
 
-        val targets = balls.filter { !it.isCueBall && it.id != 3 }
+        val botGroup = player2Group
+        val targets = if (botGroup != null) {
+            val ownBalls = balls.filter { !it.isCueBall && getBallGroup(it.id) == botGroup }
+            if (ownBalls.isNotEmpty()) ownBalls else balls.filter { !it.isCueBall && it.id == 8 }
+        } else {
+            val openTargets = balls.filter { !it.isCueBall && it.id != 8 }
+            if (openTargets.isNotEmpty()) openTargets else balls.filter { !it.isCueBall }
+        }
         val finalTargets = if (targets.isNotEmpty()) targets else balls.filter { !it.isCueBall }
         if (finalTargets.isEmpty()) return
 
@@ -467,6 +764,7 @@ class GameEngine {
     private fun applyBotStrikeDirect(vx: Float, vy: Float) {
         val cueBallIndex = balls.indexOfFirst { it.isCueBall }
         if (cueBallIndex != -1) {
+            pocketedGroupsThisTurn.clear()
             addLog("Bot strikes the cue ball!")
             balls[cueBallIndex] = balls[cueBallIndex].copy(
                 vx = vx * 0.75f,

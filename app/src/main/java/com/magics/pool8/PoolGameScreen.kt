@@ -96,9 +96,9 @@ fun PoolGameScreen(engine: GameEngine) {
                         Spacer(modifier = Modifier.height(16.dp))
 
                         GameModeButton(
-                            title = "Pass & Play",
-                            description = "Play locally with a friend on the same screen",
-                            onClick = { engine.resetGame(GameMode.PLAYER_VS_PLAYER) }
+                            title = "Play Online",
+                            description = "Play 1v1 multiplayer online with other players",
+                            onClick = { engine.resetGame(GameMode.ONLINE_MULTIPLAYER) }
                         )
                         Spacer(modifier = Modifier.height(16.dp))
 
@@ -149,10 +149,8 @@ fun PoolGameScreen(engine: GameEngine) {
                                             val dx = dragStart!!.x - dragEnd!!.x
                                             val dy = dragStart!!.y - dragEnd!!.y
 
-                                            val canvasWidth = size.width
-                                            val canvasHeight = size.height
-                                            val maxTableWidth = canvasWidth - 80f
-                                            val maxTableHeight = canvasHeight - 320f
+                                            val maxTableWidth = size.width - 180f
+                                            val maxTableHeight = size.height - 420f
                                             val tableWidth = if (maxTableHeight > maxTableWidth * 2) {
                                                 maxTableWidth
                                             } else {
@@ -176,8 +174,8 @@ fun PoolGameScreen(engine: GameEngine) {
                             val canvasWidth = size.width
                             val canvasHeight = size.height
 
-                            val maxTableWidth = canvasWidth - 80f
-                            val maxTableHeight = canvasHeight - 320f
+                            val maxTableWidth = canvasWidth - 180f
+                            val maxTableHeight = canvasHeight - 420f
 
                             val tableWidth: Float
                             val tableHeight: Float
@@ -196,6 +194,137 @@ fun PoolGameScreen(engine: GameEngine) {
                             val railThickness = 32f * (tableWidth / 1000f) // Sights/diamonds rail width
                             val cushionThickness = 12f * (tableWidth / 1000f)
                             val visualBallRadius = 30f * (tableWidth / 1000f)
+
+                            val drawCueStick: DrawScope.(Float, Float, Float, Float, Float) -> Unit = { csX, csY, dx, dy, recoil ->
+                                val u = Offset(dx, dy)
+                                val v = Offset(-dy, dx)
+                                val cueStyle = engine.selectedCueStyle
+                                val scale = tableWidth / 1000f
+
+                                val stickLength = when (cueStyle) {
+                                    CueStyle.CLASSIC_MAHOGANY -> 350f * scale
+                                    CueStyle.GOLDEN_DRAGON -> 410f * scale
+                                    CueStyle.STEALTH_CARBON -> 290f * scale
+                                }
+
+                                // Define segment points along direction u (all scaled proportionally to tableWidth)
+                                val p0 = Offset(csX, csY) + u * (visualBallRadius + recoil)
+                                val p1 = p0 + u * 8f * scale   // blue tip
+                                val p2 = p1 + u * 14f * scale  // ferrule
+                                val p3 = p2 + u * (stickLength * 0.45f) // shaft
+                                val p4 = p3 + u * 10f * scale  // joint
+                                val p5 = p4 + u * (stickLength * 0.2f)  // forearm
+                                val p6 = p5 + u * (stickLength * 0.28f) // grip
+                                val p7 = p6 + u * 13f * scale  // butt cap
+
+                                // Define half-widths at each point (proportional to table width for responsiveness)
+                                val w0 = 3f * scale
+                                val w1 = 3.2f * scale
+                                val w2 = 3.6f * scale
+                                val w3 = 6.5f * scale
+                                val w4 = 7.0f * scale
+                                val w5 = 8.5f * scale
+                                val w6 = 9.8f * scale
+                                val w7 = 10.5f * scale
+
+                                // Helper to draw a tapered segment
+                                fun DrawScope.drawSegment(ptA: Offset, ptB: Offset, widthA: Float, widthB: Float, brush: Brush) {
+                                    val path = Path().apply {
+                                        moveTo(ptA.x - v.x * widthA, ptA.y - v.y * widthA)
+                                        lineTo(ptB.x - v.x * widthB, ptB.y - v.y * widthB)
+                                        lineTo(ptB.x + v.x * widthB, ptB.y + v.y * widthB)
+                                        lineTo(ptA.x + v.x * widthA, ptA.y + v.y * widthA)
+                                        close()
+                                    }
+                                    drawPath(path = path, brush = brush)
+                                }
+
+                                // 1. Draw Drop Shadow first (shifted by offset)
+                                val shadowOffset = Offset(6f * scale, 10f * scale)
+                                val shadowBrush = SolidColor(Color.Black.copy(alpha = 0.35f))
+                                drawSegment(p0 + shadowOffset, p1 + shadowOffset, w0, w1, shadowBrush)
+                                drawSegment(p1 + shadowOffset, p2 + shadowOffset, w1, w2, shadowBrush)
+                                drawSegment(p2 + shadowOffset, p3 + shadowOffset, w2, w3, shadowBrush)
+                                drawSegment(p3 + shadowOffset, p4 + shadowOffset, w3, w4, shadowBrush)
+                                drawSegment(p4 + shadowOffset, p5 + shadowOffset, w4, w5, shadowBrush)
+                                drawSegment(p5 + shadowOffset, p6 + shadowOffset, w5, w6, shadowBrush)
+                                drawSegment(p6 + shadowOffset, p7 + shadowOffset, w6, w7, shadowBrush)
+
+                                // 2. Define colors & gradients based on style
+                                val tipBrush: Brush
+                                val ferruleBrush: Brush
+                                val shaftBrush: Brush
+                                val jointBrush: Brush
+                                val forearmBrush: Brush
+                                val gripBrush: Brush
+                                val buttBrush: Brush
+
+                                when (cueStyle) {
+                                    CueStyle.CLASSIC_MAHOGANY -> {
+                                        tipBrush = SolidColor(Color(0xFF3B82F6)) // blue chalk
+                                        ferruleBrush = SolidColor(Color(0xFFF1F5F9)) // ivory white
+                                        shaftBrush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFFFEF08A), Color(0xFFFDE047), Color(0xFFFEF08A)),
+                                            start = p1, end = p3
+                                        ) // maple wood look
+                                        jointBrush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFFB45309), Color(0xFFFDE047), Color(0xFFB45309)),
+                                            start = p3, end = p4
+                                        ) // brass joint
+                                        forearmBrush = SolidColor(Color(0xFF78350F)) // mahogany wood
+                                        gripBrush = SolidColor(Color(0xFF1E293B)) // slate wrap
+                                        buttBrush = SolidColor(Color(0xFFF1F5F9)) // ivory cap
+                                    }
+                                    CueStyle.GOLDEN_DRAGON -> {
+                                        tipBrush = SolidColor(Color(0xFF1E3A8A)) // dark royal blue
+                                        ferruleBrush = SolidColor(Color(0xFFF8FAFC)) // premium ivory
+                                        shaftBrush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFFFBBF24), Color(0xFFD97706), Color(0xFFFBBF24)),
+                                            start = p1, end = p3
+                                        ) // golden maple
+                                        jointBrush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFFFEF08A), Color(0xFFCA8A04), Color(0xFFFEF08A)),
+                                            start = p3, end = p4
+                                        ) // shiny polished gold Joint
+                                        forearmBrush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFF991B1B), Color(0xFF7F1D1D), Color(0xFF991B1B)),
+                                            start = p4, end = p5
+                                        ) // ruby red forearm
+                                        gripBrush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFFD97706), Color(0xFF991B1B), Color(0xFFD97706)),
+                                            start = p5, end = p6
+                                        ) // gold/red luxury wrap
+                                        buttBrush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFFFEF08A), Color(0xFFCA8A04), Color(0xFFFEF08A)),
+                                            start = p6, end = p7
+                                        ) // gold butt
+                                    }
+                                    CueStyle.STEALTH_CARBON -> {
+                                        tipBrush = SolidColor(Color(0xFF22D3EE)) // glowing cyan tip
+                                        ferruleBrush = SolidColor(Color(0xFF0F172A)) // carbon ferrule
+                                        shaftBrush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFF334155), Color(0xFF1E293B), Color(0xFF334155)),
+                                            start = p1, end = p3
+                                        ) // matte dark carbon
+                                        jointBrush = SolidColor(Color(0xFF06B6D4)) // electric cyan joint ring
+                                        forearmBrush = SolidColor(Color(0xFF1E293B)) // dark forearm
+                                        gripBrush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFF06B6D4), Color(0xFF0891B2), Color(0xFF06B6D4)),
+                                            start = p5, end = p6
+                                        ) // cyan grip wrap
+                                        buttBrush = SolidColor(Color(0xFF0F172A)) // dark butt cap
+                                    }
+                                }
+
+                                // 3. Draw actual segments
+                                drawSegment(p0, p1, w0, w1, tipBrush)
+                                drawSegment(p1, p2, w1, w2, ferruleBrush)
+                                drawSegment(p2, p3, w2, w3, shaftBrush)
+                                drawSegment(p3, p4, w3, w4, jointBrush)
+                                drawSegment(p4, p5, w4, w5, forearmBrush)
+                                drawSegment(p5, p6, w5, w6, gripBrush)
+                                drawSegment(p6, p7, w6, w7, buttBrush)
+                            }
 
                             // 1. LAYER 1: Wood Rail (Rounded casing + outer rail)
                             // Table Outer Casing
@@ -661,13 +790,13 @@ fun PoolGameScreen(engine: GameEngine) {
                             // 8. LAYER 8: Billiard Triangle Rack (Drawn before the break shot)
                             if (engine.isBreakShot) {
                                 val apexX = tableLeft + (500f / 1000f) * tableWidth
-                                val apexY = tableTop + (565f / 2000f) * tableHeight
+                                val apexY = tableTop + (580f / 2000f) * tableHeight
                                 
-                                val bottomLeftX = tableLeft + (380f / 1000f) * tableWidth
-                                val bottomLeftY = tableTop + (330f / 2000f) * tableHeight
+                                val bottomLeftX = tableLeft + (320f / 1000f) * tableWidth
+                                val bottomLeftY = tableTop + (220f / 2000f) * tableHeight
                                 
-                                val bottomRightX = tableLeft + (620f / 1000f) * tableWidth
-                                val bottomRightY = tableTop + (330f / 2000f) * tableHeight
+                                val bottomRightX = tableLeft + (680f / 1000f) * tableWidth
+                                val bottomRightY = tableTop + (220f / 2000f) * tableHeight
 
                                 val trianglePath = Path().apply {
                                     moveTo(apexX, apexY)
@@ -709,20 +838,62 @@ fun PoolGameScreen(engine: GameEngine) {
                                 )
 
                                 // Ball Sphere Body
-                                drawCircle(
-                                    brush = Brush.radialGradient(
+                                if (ball.id in 9..15) {
+                                    // Stripe Ball base: White shaded sphere
+                                    drawCircle(
+                                        brush = Brush.radialGradient(
+                                            colors = listOf(
+                                                Color.White,
+                                                Color(0xFFE2E8F0),
+                                                Color(0xFFCBD5E1),
+                                                Color.Black.copy(alpha = 0.8f)
+                                            ),
+                                            center = Offset(screenX - visualBallRadius * 0.35f, screenY - visualBallRadius * 0.35f),
+                                            radius = visualBallRadius * 1.35f
+                                        ),
+                                        radius = visualBallRadius,
+                                        center = Offset(screenX, screenY)
+                                    )
+                                    
+                                    // Draw color stripe band using a clipPath to keep it circular
+                                    val stripePath = Path().apply {
+                                        addOval(androidx.compose.ui.geometry.Rect(screenX - visualBallRadius, screenY - visualBallRadius, screenX + visualBallRadius, screenY + visualBallRadius))
+                                    }
+                                    drawContext.canvas.save()
+                                    drawContext.canvas.clipPath(stripePath)
+                                    val stripeHeight = visualBallRadius * 1.1f
+                                    val stripeGradient = Brush.radialGradient(
                                         colors = listOf(
-                                            Color.White,
                                             Color(ball.color),
                                             Color(ball.color).copy(alpha = 0.75f),
                                             Color.Black.copy(alpha = 0.9f)
                                         ),
                                         center = Offset(screenX - visualBallRadius * 0.35f, screenY - visualBallRadius * 0.35f),
                                         radius = visualBallRadius * 1.35f
-                                    ),
-                                    radius = visualBallRadius,
-                                    center = Offset(screenX, screenY)
-                                )
+                                    )
+                                    drawRect(
+                                        brush = stripeGradient,
+                                        topLeft = Offset(screenX - visualBallRadius, screenY - stripeHeight / 2),
+                                        size = Size(visualBallRadius * 2, stripeHeight)
+                                    )
+                                    drawContext.canvas.restore()
+                                } else {
+                                    // Solid / Cue / Black Ball: draw standard shaded sphere
+                                    drawCircle(
+                                        brush = Brush.radialGradient(
+                                            colors = listOf(
+                                                Color.White,
+                                                Color(ball.color),
+                                                Color(ball.color).copy(alpha = 0.75f),
+                                                Color.Black.copy(alpha = 0.9f)
+                                            ),
+                                            center = Offset(screenX - visualBallRadius * 0.35f, screenY - visualBallRadius * 0.35f),
+                                            radius = visualBallRadius * 1.35f
+                                        ),
+                                        radius = visualBallRadius,
+                                        center = Offset(screenX, screenY)
+                                    )
+                                }
 
                                 // White center circle for object balls (IDs 1-6 and 8-ball)
                                 if (!ball.isCueBall) {
@@ -797,81 +968,8 @@ fun PoolGameScreen(engine: GameEngine) {
                                             style = Stroke(width = 3f)
                                         )
 
-                                        // CUSTOM SELECTED CUE STICK DESIGN
-                                        val cueStyle = engine.selectedCueStyle
                                         val stickRecoil = 15f + dragLength * 0.22f
-
-                                        val stickLength: Float
-                                        val stickThickness: Float
-                                        val shaftColor: Color
-                                        val gripColor: Color
-                                        val tipColor: Color
-
-                                        when (cueStyle) {
-                                            CueStyle.CLASSIC_MAHOGANY -> {
-                                                stickLength = 360f
-                                                stickThickness = 14f
-                                                shaftColor = Color(0xFF78350F) // mahogany brown
-                                                gripColor = Color(0xFF1E293B)  // slate gray wrap
-                                                tipColor = Color(0xFFF1F5F9)   // ivory white
-                                            }
-                                            CueStyle.GOLDEN_DRAGON -> {
-                                                stickLength = 440f // Longer
-                                                stickThickness = 18f // Thicker
-                                                shaftColor = Color(0xFFD97706) // gold amber
-                                                gripColor = Color(0xFF991B1B)  // ruby red wrap
-                                                tipColor = Color(0xFFFEF08A)   // gold cap tip
-                                            }
-                                            CueStyle.STEALTH_CARBON -> {
-                                                stickLength = 290f // Shorter
-                                                stickThickness = 16f // Thicker
-                                                shaftColor = Color(0xFF334155) // carbon slate
-                                                gripColor = Color(0xFF22D3EE)  // cyan wrap
-                                                tipColor = Color(0xFF06B6D4)   // cyan glowing tip
-                                            }
-                                        }
-
-                                        val stickStart = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil), cueScreenY + ny * (visualBallRadius + stickRecoil))
-                                        val stickEnd = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + stickLength), cueScreenY + ny * (visualBallRadius + stickRecoil + stickLength))
-
-                                        // Draw Shaft
-                                        drawLine(
-                                            color = shaftColor,
-                                            start = stickStart,
-                                            end = stickEnd,
-                                            strokeWidth = stickThickness,
-                                            cap = StrokeCap.Round
-                                        )
-                                        // Draw Grip
-                                        val gripStart = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + stickLength * 0.4f), cueScreenY + ny * (visualBallRadius + stickRecoil + stickLength * 0.4f))
-                                        drawLine(
-                                            color = gripColor,
-                                            start = gripStart,
-                                            end = stickEnd,
-                                            strokeWidth = stickThickness + 1.5f,
-                                            cap = StrokeCap.Round
-                                        )
-                                        // Draw Ivory Joint Tip
-                                        val tipEnd = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + 15f), cueScreenY + ny * (visualBallRadius + stickRecoil + 15f))
-                                        drawLine(
-                                            color = tipColor,
-                                            start = stickStart,
-                                            end = tipEnd,
-                                            strokeWidth = stickThickness - 1f,
-                                            cap = StrokeCap.Round
-                                        )
-
-                                        // Ornament details for Golden Dragon pro cue
-                                        if (cueStyle == CueStyle.GOLDEN_DRAGON) {
-                                            val bandStart = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + 60f), cueScreenY + ny * (visualBallRadius + stickRecoil + 60f))
-                                            val bandEnd = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + 68f), cueScreenY + ny * (visualBallRadius + stickRecoil + 68f))
-                                            drawLine(
-                                                color = Color(0xFFFBBF24),
-                                                start = bandStart,
-                                                end = bandEnd,
-                                                strokeWidth = stickThickness + 0.5f
-                                            )
-                                        }
+                                        drawCueStick(cueScreenX, cueScreenY, nx, ny, stickRecoil)
                                     }
                                 }
                             }
@@ -908,81 +1006,8 @@ fun PoolGameScreen(engine: GameEngine) {
                                         )
                                     }
 
-                                    // CUSTOM SELECTED CUE STICK DESIGN FOR BOT
-                                    val cueStyle = engine.selectedCueStyle
                                     val stickRecoil = engine.botCueRecoil
-
-                                    val stickLength: Float
-                                    val stickThickness: Float
-                                    val shaftColor: Color
-                                    val gripColor: Color
-                                    val tipColor: Color
-
-                                    when (cueStyle) {
-                                        CueStyle.CLASSIC_MAHOGANY -> {
-                                            stickLength = 360f
-                                            stickThickness = 14f
-                                            shaftColor = Color(0xFF78350F) // mahogany brown
-                                            gripColor = Color(0xFF1E293B)  // slate gray wrap
-                                            tipColor = Color(0xFFF1F5F9)   // ivory white
-                                        }
-                                        CueStyle.GOLDEN_DRAGON -> {
-                                            stickLength = 440f // Longer
-                                            stickThickness = 18f // Thicker
-                                            shaftColor = Color(0xFFD97706) // gold amber
-                                            gripColor = Color(0xFF991B1B)  // ruby red wrap
-                                            tipColor = Color(0xFFFEF08A)   // gold cap tip
-                                        }
-                                        CueStyle.STEALTH_CARBON -> {
-                                            stickLength = 290f // Shorter
-                                            stickThickness = 16f // Thicker
-                                            shaftColor = Color(0xFF334155) // carbon slate
-                                            gripColor = Color(0xFF22D3EE)  // cyan wrap
-                                            tipColor = Color(0xFF06B6D4)   // cyan glowing tip
-                                        }
-                                    }
-
-                                    val stickStart = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil), cueScreenY + ny * (visualBallRadius + stickRecoil))
-                                    val stickEnd = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + stickLength), cueScreenY + ny * (visualBallRadius + stickRecoil + stickLength))
-
-                                    // Draw Shaft
-                                    drawLine(
-                                        color = shaftColor,
-                                        start = stickStart,
-                                        end = stickEnd,
-                                        strokeWidth = stickThickness,
-                                        cap = StrokeCap.Round
-                                    )
-                                    // Draw Grip
-                                    val gripStart = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + stickLength * 0.4f), cueScreenY + ny * (visualBallRadius + stickRecoil + stickLength * 0.4f))
-                                    drawLine(
-                                        color = gripColor,
-                                        start = gripStart,
-                                        end = stickEnd,
-                                        strokeWidth = stickThickness + 1.5f,
-                                        cap = StrokeCap.Round
-                                    )
-                                    // Draw Ivory Joint Tip
-                                    val tipEnd = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + 15f), cueScreenY + ny * (visualBallRadius + stickRecoil + 15f))
-                                    drawLine(
-                                        color = tipColor,
-                                        start = stickStart,
-                                        end = tipEnd,
-                                        strokeWidth = stickThickness - 1f,
-                                        cap = StrokeCap.Round
-                                    )
-
-                                    // Ornament details for Golden Dragon pro cue
-                                    if (cueStyle == CueStyle.GOLDEN_DRAGON) {
-                                        val bandStart = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + 60f), cueScreenY + ny * (visualBallRadius + stickRecoil + 60f))
-                                        val bandEnd = Offset(cueScreenX + nx * (visualBallRadius + stickRecoil + 68f), cueScreenY + ny * (visualBallRadius + stickRecoil + 68f))
-                                        drawLine(
-                                            color = Color(0xFFFBBF24),
-                                            start = bandStart,
-                                            end = bandEnd,
-                                            strokeWidth = stickThickness + 0.5f
-                                        )
-                                    }
+                                    drawCueStick(cueScreenX, cueScreenY, nx, ny, stickRecoil)
                                 }
                             }
                         }
@@ -1096,7 +1121,7 @@ fun GameHeaderPanel(
     isCueSelectorVisible: Boolean,
     onToggleCueSelector: () -> Unit
 ) {
-    val remainingObjects = engine.balls.count { !it.isCueBall && it.id != 3 }
+    val remainingObjects = engine.balls.count { !it.isCueBall && it.id != 8 }
     val isSimulationRunning = engine.isSimulationRunning
 
     Surface(
@@ -1135,7 +1160,20 @@ fun GameHeaderPanel(
                     val turnText: String
                     val turnColor: Color
 
-                    if (engine.currentMode == GameMode.PRACTICE) {
+                    if (engine.currentMode == GameMode.ONLINE_MULTIPLAYER) {
+                        if (engine.onlineStatus != null && !engine.onlineStatus!!.startsWith("Matched")) {
+                            turnText = engine.onlineStatus!!.uppercase()
+                            turnColor = Color(0xFFEAB308)
+                        } else {
+                            if (engine.isPlayerTurn) {
+                                turnText = "YOUR TURN"
+                                turnColor = Color(0xFF22D3EE)
+                            } else {
+                                turnText = "OPPONENT'S TURN"
+                                turnColor = Color(0xFFEF4444)
+                            }
+                        }
+                    } else if (engine.currentMode == GameMode.PRACTICE) {
                         turnText = "PRACTICE MODE"
                         turnColor = Color(0xFFEAB308)
                     } else if (engine.currentMode == GameMode.PLAYER_VS_BOT) {
@@ -1233,7 +1271,7 @@ fun GameHeaderPanel(
                     )
                 }
 
-                val has8Ball = engine.balls.any { it.id == 3 }
+                val has8Ball = engine.balls.any { it.id == 8 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
@@ -1249,6 +1287,61 @@ fun GameHeaderPanel(
                         color = Color.White.copy(alpha = 0.8f),
                         fontWeight = FontWeight.SemiBold
                     )
+                }
+            }
+
+            if (engine.currentMode != GameMode.PRACTICE) {
+                Spacer(modifier = Modifier.height(4.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val p1Label = if (engine.currentMode == GameMode.PLAYER_VS_BOT) {
+                        "You"
+                    } else if (engine.currentMode == GameMode.ONLINE_MULTIPLAYER) {
+                        if (engine.myRole == "P1") "You (P1)" else "Opponent (P1)"
+                    } else {
+                        "Player 1"
+                    }
+                    val p2Label = if (engine.currentMode == GameMode.PLAYER_VS_BOT) {
+                        "Bot"
+                    } else if (engine.currentMode == GameMode.ONLINE_MULTIPLAYER) {
+                        if (engine.myRole == "P2") "You (P2)" else "Opponent (P2)"
+                    } else {
+                        "Player 2"
+                    }
+                    
+                    if (engine.player1Group != null) {
+                        Text(
+                            text = "$p1Label: ${engine.player1Group.toString().lowercase().replaceFirstChar { it.uppercase() }}s",
+                            fontSize = 11.sp,
+                            color = Color(0xFF22D3EE),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "$p2Label: ${engine.player2Group.toString().lowercase().replaceFirstChar { it.uppercase() }}s",
+                            fontSize = 11.sp,
+                            color = Color(0xFFA855F7),
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Table is Open",
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontWeight = FontWeight.Medium,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            )
+                        }
+                    }
                 }
             }
         }

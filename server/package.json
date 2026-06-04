@@ -1,0 +1,9 @@
+{
+  "name": "pool8-matchmaker",
+  "version": "1.0.0",
+  "description": "WebSocket matchmaker for 8-ball pool online multiplayer",
+  "main": "server.js",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
