@@ -146,6 +146,7 @@ class GameEngine {
     var winnerMessage by mutableStateOf<String?>(null)
     var isSimulationRunning by mutableStateOf(false)
     var selectedCueStyle by mutableStateOf(CueStyle.CLASSIC_MAHOGANY)
+    var showAimHelper by mutableStateOf(true)
     var isBreakShot by mutableStateOf(true)
 
     // Bot Strike Animation properties

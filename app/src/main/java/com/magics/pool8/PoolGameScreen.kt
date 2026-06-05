@@ -149,8 +149,8 @@ fun PoolGameScreen(engine: GameEngine) {
                                             val dx = dragStart!!.x - dragEnd!!.x
                                             val dy = dragStart!!.y - dragEnd!!.y
 
-                                            val maxTableWidth = size.width - 260f
-                                            val maxTableHeight = size.height - 560f
+                                            val maxTableWidth = size.width - 210f
+                                            val maxTableHeight = size.height - 470f
                                             val tableWidth = if (maxTableHeight > maxTableWidth * 2) {
                                                 maxTableWidth
                                             } else {
@@ -174,8 +174,8 @@ fun PoolGameScreen(engine: GameEngine) {
                             val canvasWidth = size.width
                             val canvasHeight = size.height
 
-                            val maxTableWidth = canvasWidth - 260f
-                            val maxTableHeight = canvasHeight - 560f
+                            val maxTableWidth = canvasWidth - 210f
+                            val maxTableHeight = canvasHeight - 470f
 
                             val tableWidth: Float
                             val tableHeight: Float
@@ -932,7 +932,7 @@ fun PoolGameScreen(engine: GameEngine) {
                                 )
                             }
 
-                            // 10. LAYER 10: AIMING MECHANICS (Styled cue stick)
+                            // 10. LAYER 10: AIMING MECHANICS (Laser dashed lines and styled cue stick)
                             if (dragStart != null && dragEnd != null && engine.isPlayerTurn && engine.gameState == GameState.PLAYING) {
                                 val cueBall = engine.balls.find { it.isCueBall }
                                 if (cueBall != null) {
@@ -946,6 +946,28 @@ fun PoolGameScreen(engine: GameEngine) {
                                     if (dragLength > 10f) {
                                         val nx = dragDx / dragLength
                                         val ny = dragDy / dragLength
+
+                                        if (engine.showAimHelper) {
+                                            val aimLength = Math.min(dragLength * 2.2f, 450f)
+                                            val aimStart = Offset(cueScreenX - nx * visualBallRadius, cueScreenY - ny * visualBallRadius)
+                                            val aimEnd = Offset(cueScreenX - nx * (visualBallRadius + aimLength), cueScreenY - ny * (visualBallRadius + aimLength))
+
+                                            drawLine(
+                                                color = Color(0xBB06B6D4), 
+                                                start = aimStart,
+                                                end = aimEnd,
+                                                strokeWidth = 5f,
+                                                cap = StrokeCap.Round,
+                                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f), 0f)
+                                            )
+
+                                            drawCircle(
+                                                color = Color(0xBB06B6D4),
+                                                radius = 12f,
+                                                center = aimEnd,
+                                                style = Stroke(width = 3f)
+                                            )
+                                        }
 
                                         val stickRecoil = 15f + dragLength * 0.22f
                                         drawCueStick(cueScreenX, cueScreenY, nx, ny, stickRecoil)
@@ -962,6 +984,30 @@ fun PoolGameScreen(engine: GameEngine) {
 
                                     val nx = engine.botAimDx
                                     val ny = engine.botAimDy
+
+                                    if (engine.showAimHelper) {
+                                        val aimLength = engine.botAimLength
+                                        if (aimLength > 0f) {
+                                            val aimStart = Offset(cueScreenX - nx * visualBallRadius, cueScreenY - ny * visualBallRadius)
+                                            val aimEnd = Offset(cueScreenX - nx * (visualBallRadius + aimLength), cueScreenY - ny * (visualBallRadius + aimLength))
+
+                                            drawLine(
+                                                color = Color(0xBB06B6D4), 
+                                                start = aimStart,
+                                                end = aimEnd,
+                                                strokeWidth = 5f,
+                                                cap = StrokeCap.Round,
+                                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f), 0f)
+                                            )
+
+                                            drawCircle(
+                                                color = Color(0xBB06B6D4),
+                                                radius = 12f,
+                                                center = aimEnd,
+                                                style = Stroke(width = 3f)
+                                            )
+                                        }
+                                    }
 
                                     val stickRecoil = engine.botCueRecoil
                                     drawCueStick(cueScreenX, cueScreenY, nx, ny, stickRecoil)
@@ -1358,6 +1404,33 @@ fun CueSelectorPanel(engine: GameEngine, onSelected: () -> Unit) {
                         onSelected()
                     },
                     modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { engine.showAimHelper = !engine.showAimHelper }
+            ) {
+                Checkbox(
+                    checked = engine.showAimHelper,
+                    onCheckedChange = { engine.showAimHelper = it },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = Color(0xFF22D3EE),
+                        uncheckedColor = Color(0xFF94A3B8)
+                    ),
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Show Aiming Helper Lines",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White
                 )
             }
         }
