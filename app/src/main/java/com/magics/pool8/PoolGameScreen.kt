@@ -149,8 +149,8 @@ fun PoolGameScreen(engine: GameEngine) {
                                             val dx = dragStart!!.x - dragEnd!!.x
                                             val dy = dragStart!!.y - dragEnd!!.y
 
-                                            val maxTableWidth = size.width - 180f
-                                            val maxTableHeight = size.height - 420f
+                                            val maxTableWidth = size.width - 260f
+                                            val maxTableHeight = size.height - 560f
                                             val tableWidth = if (maxTableHeight > maxTableWidth * 2) {
                                                 maxTableWidth
                                             } else {
@@ -174,8 +174,8 @@ fun PoolGameScreen(engine: GameEngine) {
                             val canvasWidth = size.width
                             val canvasHeight = size.height
 
-                            val maxTableWidth = canvasWidth - 180f
-                            val maxTableHeight = canvasHeight - 420f
+                            val maxTableWidth = canvasWidth - 260f
+                            val maxTableHeight = canvasHeight - 560f
 
                             val tableWidth: Float
                             val tableHeight: Float
@@ -202,9 +202,9 @@ fun PoolGameScreen(engine: GameEngine) {
                                 val scale = tableWidth / 1000f
 
                                 val stickLength = when (cueStyle) {
-                                    CueStyle.CLASSIC_MAHOGANY -> 350f * scale
-                                    CueStyle.GOLDEN_DRAGON -> 410f * scale
-                                    CueStyle.STEALTH_CARBON -> 290f * scale
+                                     CueStyle.CLASSIC_MAHOGANY -> 550f * scale
+                                     CueStyle.GOLDEN_DRAGON -> 620f * scale
+                                     CueStyle.STEALTH_CARBON -> 480f * scale
                                 }
 
                                 // Define segment points along direction u (all scaled proportionally to tableWidth)
@@ -932,7 +932,7 @@ fun PoolGameScreen(engine: GameEngine) {
                                 )
                             }
 
-                            // 10. LAYER 10: AIMING MECHANICS (Laser dashed lines and styled cue stick)
+                            // 10. LAYER 10: AIMING MECHANICS (Styled cue stick)
                             if (dragStart != null && dragEnd != null && engine.isPlayerTurn && engine.gameState == GameState.PLAYING) {
                                 val cueBall = engine.balls.find { it.isCueBall }
                                 if (cueBall != null) {
@@ -946,27 +946,6 @@ fun PoolGameScreen(engine: GameEngine) {
                                     if (dragLength > 10f) {
                                         val nx = dragDx / dragLength
                                         val ny = dragDy / dragLength
-
-                                        // Cyan laser aiming pointer vector
-                                        val aimLength = Math.min(dragLength * 2.2f, 450f)
-                                        val aimStart = Offset(cueScreenX - nx * visualBallRadius, cueScreenY - ny * visualBallRadius)
-                                        val aimEnd = Offset(cueScreenX - nx * (visualBallRadius + aimLength), cueScreenY - ny * (visualBallRadius + aimLength))
-
-                                        drawLine(
-                                            color = Color(0xBB06B6D4), 
-                                            start = aimStart,
-                                            end = aimEnd,
-                                            strokeWidth = 5f,
-                                            cap = StrokeCap.Round,
-                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f), 0f)
-                                        )
-
-                                        drawCircle(
-                                            color = Color(0xBB06B6D4),
-                                            radius = 12f,
-                                            center = aimEnd,
-                                            style = Stroke(width = 3f)
-                                        )
 
                                         val stickRecoil = 15f + dragLength * 0.22f
                                         drawCueStick(cueScreenX, cueScreenY, nx, ny, stickRecoil)
@@ -983,28 +962,6 @@ fun PoolGameScreen(engine: GameEngine) {
 
                                     val nx = engine.botAimDx
                                     val ny = engine.botAimDy
-                                    val aimLength = engine.botAimLength
-
-                                    if (aimLength > 0f) {
-                                        val aimStart = Offset(cueScreenX - nx * visualBallRadius, cueScreenY - ny * visualBallRadius)
-                                        val aimEnd = Offset(cueScreenX - nx * (visualBallRadius + aimLength), cueScreenY - ny * (visualBallRadius + aimLength))
-
-                                        drawLine(
-                                            color = Color(0xBB06B6D4), 
-                                            start = aimStart,
-                                            end = aimEnd,
-                                            strokeWidth = 5f,
-                                            cap = StrokeCap.Round,
-                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f), 0f)
-                                        )
-
-                                        drawCircle(
-                                            color = Color(0xBB06B6D4),
-                                            radius = 12f,
-                                            center = aimEnd,
-                                            style = Stroke(width = 3f)
-                                        )
-                                    }
 
                                     val stickRecoil = engine.botCueRecoil
                                     drawCueStick(cueScreenX, cueScreenY, nx, ny, stickRecoil)
