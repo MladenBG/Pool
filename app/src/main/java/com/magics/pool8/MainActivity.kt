@@ -1,5 +1,6 @@
 package com.magics.pool8
 
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,6 +18,10 @@ import com.magics.pool8.ui.theme.Pool8Theme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Force portrait orientation programmatically (covers tablets)
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        
         enableEdgeToEdge()
 
         // Initialize the Magics Physics Engine
