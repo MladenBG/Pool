@@ -164,7 +164,6 @@ class GameEngine {
 
     init {
         System.loadLibrary("magicspool")
-        resetGame(GameMode.PLAYER_VS_BOT)
         startPhysicsLoop()
     }
 
