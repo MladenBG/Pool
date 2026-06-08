@@ -193,6 +193,22 @@ class GameEngine {
         }
     }
 
+    fun exitToMenu() {
+        gameState = GameState.MENU
+        disconnectWebSocket()
+        balls.clear()
+        eventLogs.clear()
+        onlineStatus = null
+        myRole = null
+        winnerMessage = null
+        isSimulationRunning = false
+        isBreakShot = true
+        player1Group = null
+        player2Group = null
+        pocketedGroupsThisTurn.clear()
+        resetBotAnimationState()
+    }
+
     private fun connectWebSocket() {
         onlineStatus = "Connecting to matchmaking server..."
         val request = Request.Builder()

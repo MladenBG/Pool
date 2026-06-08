@@ -55,6 +55,9 @@ android {
 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation(libs.play.services.ads)
+    implementation(libs.billing.ktx)
+    implementation(libs.play.review)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

@@ -15,9 +15,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,24 +39,64 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.cos
 import kotlin.math.sin
+import android.app.Activity
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.style.TextDecoration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PoolGameScreen(engine: GameEngine) {
+fun PoolGameScreen(engine: GameEngine, monetizationManager: MonetizationManager) {
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragEnd by remember { mutableStateOf<Offset?>(null) }
     var isCueSelectorVisible by remember { mutableStateOf(true) }
+
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
+    var showTermsOfService by remember { mutableStateOf(false) }
+    var showSubscriptionBilling by remember { mutableStateOf(false) }
+    var showRatingDialog by remember { mutableStateOf(false) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val ratingPrefs = remember { context.getSharedPreferences("magics_monetization_prefs", android.content.Context.MODE_PRIVATE) }
+
+    LaunchedEffect(engine.gameState) {
+        if (engine.gameState == GameState.MENU) {
+            val hasPrompted = ratingPrefs.getBoolean("has_prompted_rating", false)
+            if (!hasPrompted) {
+                val installTime = try {
+                    context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
+                } catch (e: Exception) {
+                    System.currentTimeMillis()
+                }
+                val daysInstalled = (System.currentTimeMillis() - installTime) / (1000 * 60 * 60 * 24)
+                if (daysInstalled >= 3) {
+                    showRatingDialog = true
+                }
+            }
+        }
+    }
 
     val tableFeltColor = Color(0xFF0F766E) // teal-700 / modern pool table felt
     val tableRailColor = Color(0xFF4E2712) // mahogany wood
     val pocketColor = Color(0xFF090D16) // deep slate black hole
     val pocketRimColor = Color(0xFFEAB308) // gold pocket rim
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F172A)) // slate-900 / premium dark mode background
+            .background(Color(0xFF0F172A))
     ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
         when (engine.gameState) {
             GameState.MENU -> {
                 Box(
@@ -63,6 +105,21 @@ fun PoolGameScreen(engine: GameEngine) {
                         .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
+                    // Settings Icon in the Top Right Corner of Menu
+                    IconButton(
+                        onClick = { showSettingsDialog = true },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .background(Color(0xFF1E293B), CircleShape)
+                            .border(1.dp, Color.White.copy(alpha = 0.1f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = Color(0xFF22D3EE)
+                        )
+                    }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
@@ -150,7 +207,7 @@ fun PoolGameScreen(engine: GameEngine) {
                                             val dy = dragStart!!.y - dragEnd!!.y
 
                                             val maxTableWidth = size.width - 210f
-                                            val maxTableHeight = size.height - 470f
+                                            val maxTableHeight = size.height - 250f
                                             val tableWidth = if (maxTableHeight > maxTableWidth * 2) {
                                                 maxTableWidth
                                             } else {
@@ -175,7 +232,7 @@ fun PoolGameScreen(engine: GameEngine) {
                             val canvasHeight = size.height
 
                             val maxTableWidth = canvasWidth - 210f
-                            val maxTableHeight = canvasHeight - 470f
+                            val maxTableHeight = canvasHeight - 250f
 
                             val tableWidth: Float
                             val tableHeight: Float
@@ -336,7 +393,7 @@ fun PoolGameScreen(engine: GameEngine) {
                             )
                             // Wooden Rails
                             drawRoundRect(
-                                color = tableRailColor, 
+                                color = tableRailColor,
                                 topLeft = Offset(tableLeft - railThickness, tableTop - railThickness),
                                 size = Size(tableWidth + railThickness * 2, tableHeight + railThickness * 2),
                                 cornerRadius = CornerRadius(20f, 20f)
@@ -499,7 +556,7 @@ fun PoolGameScreen(engine: GameEngine) {
 
                             // 7. LAYER 7: Pockets (aligned with corner cuts, gold rims, inner shadow)
                             val visualPocketRadius = 45f * (tableWidth / 1000f)
-                            
+
                             data class PocketInfo(
                                 val center: Offset,
                                 val offset: Offset, // depth drop direction
@@ -569,7 +626,7 @@ fun PoolGameScreen(engine: GameEngine) {
 
                             pocketInfos.forEach { pocket ->
                                 val pos = pocket.center
-                                
+
                                 // 7a. Draw the outer pocket rubber liner sleeve / jaws
                                 drawCircle(
                                     color = Color(0xFF1E293B), // slate-800 rubber texture
@@ -791,10 +848,10 @@ fun PoolGameScreen(engine: GameEngine) {
                             if (engine.isBreakShot) {
                                 val apexX = tableLeft + (500f / 1000f) * tableWidth
                                 val apexY = tableTop + (580f / 2000f) * tableHeight
-                                
+
                                 val bottomLeftX = tableLeft + (320f / 1000f) * tableWidth
                                 val bottomLeftY = tableTop + (220f / 2000f) * tableHeight
-                                
+
                                 val bottomRightX = tableLeft + (680f / 1000f) * tableWidth
                                 val bottomRightY = tableTop + (220f / 2000f) * tableHeight
 
@@ -854,7 +911,7 @@ fun PoolGameScreen(engine: GameEngine) {
                                         radius = visualBallRadius,
                                         center = Offset(screenX, screenY)
                                     )
-                                    
+
                                     // Draw color stripe band using a clipPath to keep it circular
                                     val stripePath = Path().apply {
                                         addOval(androidx.compose.ui.geometry.Rect(screenX - visualBallRadius, screenY - visualBallRadius, screenX + visualBallRadius, screenY + visualBallRadius))
@@ -953,7 +1010,7 @@ fun PoolGameScreen(engine: GameEngine) {
                                             val aimEnd = Offset(cueScreenX - nx * (visualBallRadius + aimLength), cueScreenY - ny * (visualBallRadius + aimLength))
 
                                             drawLine(
-                                                color = Color(0xBB06B6D4), 
+                                                color = Color(0xBB06B6D4),
                                                 start = aimStart,
                                                 end = aimEnd,
                                                 strokeWidth = 5f,
@@ -992,7 +1049,7 @@ fun PoolGameScreen(engine: GameEngine) {
                                             val aimEnd = Offset(cueScreenX - nx * (visualBallRadius + aimLength), cueScreenY - ny * (visualBallRadius + aimLength))
 
                                             drawLine(
-                                                color = Color(0xBB06B6D4), 
+                                                color = Color(0xBB06B6D4),
                                                 start = aimStart,
                                                 end = aimEnd,
                                                 strokeWidth = 5f,
@@ -1051,7 +1108,7 @@ fun PoolGameScreen(engine: GameEngine) {
                             )
                             Spacer(modifier = Modifier.height(28.dp))
                             Button(
-                                onClick = { engine.gameState = GameState.MENU },
+                                onClick = { engine.exitToMenu() },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF06B6D4)),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
@@ -1062,7 +1119,455 @@ fun PoolGameScreen(engine: GameEngine) {
                     }
                 }
             }
+        } // closes when (engine.gameState)
+    } // closes Box(weight(1f))
+
+    // Bottom Banner Ad Container
+    if (!monetizationManager.isPremium) {
+        BannerAdContainer(monetizationManager = monetizationManager)
+    }
+} // closes Column
+
+// Settings Custom Dialog Dialog Overlay
+if (showSettingsDialog) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f)) // Dim background
+            .clickable(enabled = true, onClick = { showSettingsDialog = false }),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .wrapContentHeight()
+                .clickable(enabled = false, onClick = {}) // Prevent dismiss on card click
+                .border(1.dp, Color(0xFF22D3EE).copy(alpha = 0.2f), RoundedCornerShape(20.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "SETTINGS",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF22D3EE),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 8.dp))
+
+                // Subscription One-Time Payment Button
+                SettingsOptionRow(
+                    title = "Subscription One-Time Payment",
+                    onClick = {
+                        showSettingsDialog = false
+                        showSubscriptionBilling = true
+                    }
+                )
+
+                // Privacy Policy Button
+                SettingsOptionRow(
+                    title = "Privacy Policy",
+                    onClick = { showPrivacyPolicy = true }
+                )
+
+                // Terms of Service Button
+                SettingsOptionRow(
+                    title = "Terms of Service",
+                    onClick = { showTermsOfService = true }
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = { showSettingsDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Close", color = Color.White)
+                }
+            }
         }
+    }
+}
+
+// Subscription Billing Dialog
+if (showSubscriptionBilling) {
+    SubscriptionBillingComponent(
+        monetizationManager = monetizationManager,
+        onClose = { showSubscriptionBilling = false }
+    )
+}
+
+// Privacy Policy Dialog
+if (showPrivacyPolicy) {
+    LegalTextDialog(
+        title = "Privacy Policy",
+        content = """
+            PRIVACY POLICY
+            Last Updated: June 5, 2026
+
+            Welcome to 8-Ball Billiards. Your privacy is critically important to us. This Privacy Policy details how we handle information in connection with our mobile application.
+
+            1. INFORMATION COLLECTION AND USE
+            For a premium experience, the application offers a "Lifetime Premium" in-app purchase. If you purchase the Lifetime Premium, we do not show advertisements.
+            For free (non-premium) users, this app integrates third-party services that may collect information used to identify you. We use Google AdMob to display advertisements. Google AdMob may collect and process device identifiers, advertising IDs, cookie data, and location information to deliver personalized or non-personalized advertisements, improve ad targeting, and analyze ad traffic.
+
+            2. ADVERTISEMENTS AND FREQUENCY
+            If you are a free user, we serve:
+            - App Open Ads: Displayed immediately upon launching the application.
+            - Banner Ads: Displayed continuously at the bottom of the screen.
+            - Interstitial Ads: Full-screen ads that display periodically (approximately every 5 minutes). To protect your gaming experience, we verify that there is no active ball simulation running on the pool table before displaying any interstitial advertisement.
+
+            3. GOOGLE PLAY BILLING
+            The app uses Google Play Billing to manage in-app transactions. When you purchase "Lifetime Premium" for a one-time fee of $5.99, Google Play handles your financial details. We do not store or have access to your credit card or payment information. Upon successful verification of payment, all advertisement modules are permanently deactivated.
+
+            4. THIRD-PARTY PRIVACY POLICIES
+            You are encouraged to read the privacy policy of our advertising partner, Google AdMob, to understand their data collection practices:
+            https://policies.google.com/privacy
+
+            5. SECURITY
+            We value your trust in using our application. While we do not collect any personal data directly, our third-party SDK partners employ industry-standard measures to safeguard your information.
+
+            6. CONTACT US
+            If you have any questions or suggestions regarding our Privacy Policy, do not hesitate to contact us at:
+            info@magicsdev.com
+        """.trimIndent(),
+        onClose = { showPrivacyPolicy = false }
+    )
+}
+
+// Terms of Service Dialog
+if (showTermsOfService) {
+    LegalTextDialog(
+        title = "Terms of Service",
+        content = """
+            TERMS OF SERVICE
+            Last Updated: June 5, 2026
+
+            By downloading, installing, or using 8-Ball Billiards, you agree to be bound by these Terms of Service. Please read them carefully.
+
+            1. ACCEPTANCE OF TERMS
+            These terms govern your use of the 8-Ball Billiards game. If you do not agree to these terms, you must uninstall the app and cease using our services.
+
+            2. MONETIZATION AND IN-APP PURCHASES
+            - Lifetime Premium: You may purchase our "Lifetime Premium" package for a one-time payment of $5.99. This is a lifetime purchase that binds to your Google Play Account.
+            - Purchase Validity: Once purchased and acknowledged, all ads in the game will be permanently removed. Lifetime Premium is non-transferable and subject to Google Play’s refund policies.
+            - Ad-Supported Free Version: If you choose not to purchase Lifetime Premium, you agree to receive advertisements served by Google AdMob, including banners, app open ads, and full-screen interstitials (timed every 5 minutes, appearing when gameplay is idle).
+
+            3. INTELLECTUAL PROPERTY
+            All graphics, physics algorithms, game design, code, sounds, and assets within 8-Ball Billiards are the exclusive intellectual property of Magics Development or its licensors. You may not copy, modify, distribute, reverse engineer, or decompile the game or any of its components.
+
+            4. USER CONDUCT AND MULTIPLAYER
+            In multiplayer or online modes, you agree to play fairly and respect other players. Cheating, exploiting physics engine bugs, using third-party aim helpers not built into the app, or behaving abusively will result in a permanent ban from online features.
+
+            5. LIMITATION OF LIABILITY
+            The game is provided "AS IS" and "AS AVAILABLE" without any warranties of any kind. Magics Development shall not be liable for any direct, indirect, incidental, or consequential damages resulting from the use or inability to use the application.
+
+            6. CONTACT AND SUPPORT
+            For support requests, billing queries, or license issues, please reach out to our team at:
+            info@magicsdev.com
+        """.trimIndent(),
+        onClose = { showTermsOfService = false }
+    )
+}
+
+// Rating Dialog Redirect to Google Play Store (Appears after 3 days of installation)
+if (showRatingDialog) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.8f))
+            .clickable { showRatingDialog = false },
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .wrapContentHeight()
+                .clickable(enabled = false, onClick = {})
+                .border(1.dp, Color(0xFF22D3EE).copy(alpha = 0.2f), RoundedCornerShape(24.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Gold star icon
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(Color(0xFFEAB308).copy(alpha = 0.1f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = null,
+                        tint = Color(0xFFEAB308),
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "RATE OUR GAME",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF22D3EE),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "If you enjoy playing 8-Ball Billiards, please take a moment to rate us on the Google Play Store! Your reviews help us make the game even better.",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.8f),
+                    textAlign = TextAlign.Center,
+                    lineHeight = 18.sp
+                )
+
+                // Row of 5 stars
+                Row(
+                    modifier = Modifier.padding(vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    repeat(5) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = Color(0xFFEAB308),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                // Rate Now Button
+                Button(
+                    onClick = {
+                        showRatingDialog = false
+                        ratingPrefs.edit().putBoolean("has_prompted_rating", true).apply()
+                        val packageName = context.packageName
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("market://details?id=$packageName")
+                        ).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        try {
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            val webIntent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
+                            ).apply {
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(webIntent)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Rate Now",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Maybe Later Button
+                TextButton(
+                    onClick = { showRatingDialog = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Maybe Later",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+}
+
+@Composable
+fun BannerAdContainer(monetizationManager: MonetizationManager) {
+    val activity = androidx.compose.ui.platform.LocalContext.current as? Activity
+    if (activity != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF0F172A))
+                .padding(vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            AndroidView(
+                factory = { context ->
+                    monetizationManager.createBannerAdView(activity)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun LegalTextDialog(title: String, content: String, onClose: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.85f))
+            .clickable(enabled = true, onClick = onClose),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f)
+                .clickable(enabled = false, onClick = {})
+                .border(1.dp, Color(0xFF22D3EE).copy(alpha = 0.3f), RoundedCornerShape(24.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+            ) {
+                Text(
+                    text = title.uppercase(),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF22D3EE),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                val context = androidx.compose.ui.platform.LocalContext.current
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(Color(0xFF1E293B), RoundedCornerShape(12.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                        .padding(16.dp)
+                ) {
+                    val scrollState = rememberScrollState()
+                    val emailAddress = "info@magicsdev.com"
+                    val annotatedText = buildAnnotatedString {
+                        var startIndex = 0
+                        while (true) {
+                            val emailIndex = content.indexOf(emailAddress, startIndex)
+                            if (emailIndex == -1) {
+                                append(content.substring(startIndex))
+                                break
+                            }
+                            append(content.substring(startIndex, emailIndex))
+
+                            pushStringAnnotation(tag = "EMAIL", annotation = emailAddress)
+                            withStyle(
+                                style = SpanStyle(
+                                    color = Color(0xFF22D3EE),
+                                    textDecoration = TextDecoration.Underline,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            ) {
+                                append(emailAddress)
+                            }
+                            pop()
+
+                            startIndex = emailIndex + emailAddress.length
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrollState)
+                    ) {
+                        ClickableText(
+                            text = annotatedText,
+                            style = LocalTextStyle.current.copy(
+                                fontSize = 13.sp,
+                                color = Color.White.copy(alpha = 0.9f),
+                                lineHeight = 18.sp
+                            ),
+                            onClick = { offset ->
+                                annotatedText.getStringAnnotations(tag = "EMAIL", start = offset, end = offset)
+                                    .firstOrNull()?.let { annotation ->
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+                                            data = android.net.Uri.parse("mailto:${annotation.item}")
+                                            putExtra(android.content.Intent.EXTRA_SUBJECT, "8-Ball Billiards Support")
+                                        }
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            // ignore
+                                        }
+                                    }
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = onClose,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Go Back",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsOptionRow(title: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.White.copy(alpha = 0.85f)
+        )
+        Icon(
+            imageVector = Icons.Default.PlayArrow,
+            contentDescription = "Open",
+            tint = Color(0xFF22D3EE).copy(alpha = 0.6f),
+            modifier = Modifier.size(14.dp)
+        )
     }
 }
 
@@ -1138,7 +1643,7 @@ fun GameHeaderPanel(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 4.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1146,15 +1651,15 @@ fun GameHeaderPanel(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 IconButton(
-                    onClick = { engine.gameState = GameState.MENU },
+                    onClick = { engine.exitToMenu() },
                     modifier = Modifier
                         .size(32.dp)
                         .background(Color(0xFF334155), CircleShape)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back to Menu",
-                        tint = Color.White,
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Quit Game",
+                        tint = Color(0xFFEF4444),
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -1199,14 +1704,14 @@ fun GameHeaderPanel(
 
                     Text(
                         text = turnText,
-                        fontSize = 15.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = turnColor
                     )
 
                     Text(
                         text = if (isSimulationRunning) "Balls rolling..." else "Drag screen to shoot",
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         color = Color.White.copy(alpha = 0.5f),
                         fontWeight = FontWeight.Medium
                     )
@@ -1249,102 +1754,85 @@ fun GameHeaderPanel(
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFEAB308))
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Object Left: $remainingObjects",
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontWeight = FontWeight.SemiBold
-                    )
+                // Left Column: Player 1 / Your group info
+                val p1Label = if (engine.currentMode == GameMode.PLAYER_VS_BOT) {
+                    "You"
+                } else if (engine.currentMode == GameMode.ONLINE_MULTIPLAYER) {
+                    if (engine.myRole == "P1") "You (P1)" else "Opponent (P1)"
+                } else {
+                    "Player 1"
                 }
-
-                val has8Ball = engine.balls.any { it.id == 8 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(if (has8Ball) Color.Black else Color.Black.copy(alpha = 0.2f))
-                            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (has8Ball) "8-Ball: Active" else "8-Ball: Pocketed",
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-
-            if (engine.currentMode != GameMode.PRACTICE) {
-                Spacer(modifier = Modifier.height(4.dp))
-                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val p1Label = if (engine.currentMode == GameMode.PLAYER_VS_BOT) {
-                        "You"
-                    } else if (engine.currentMode == GameMode.ONLINE_MULTIPLAYER) {
-                        if (engine.myRole == "P1") "You (P1)" else "Opponent (P1)"
-                    } else {
-                        "Player 1"
-                    }
-                    val p2Label = if (engine.currentMode == GameMode.PLAYER_VS_BOT) {
-                        "Bot"
-                    } else if (engine.currentMode == GameMode.ONLINE_MULTIPLAYER) {
-                        if (engine.myRole == "P2") "You (P2)" else "Opponent (P2)"
-                    } else {
-                        "Player 2"
-                    }
-                    
+                
+                if (engine.currentMode != GameMode.PRACTICE) {
                     if (engine.player1Group != null) {
                         Text(
                             text = "$p1Label: ${engine.player1Group.toString().lowercase().replaceFirstChar { it.uppercase() }}s",
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             color = Color(0xFF22D3EE),
                             fontWeight = FontWeight.Bold
                         )
+                    } else {
+                        Text(
+                            text = "Table Open",
+                            fontSize = 10.sp,
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "Practice",
+                        fontSize = 10.sp,
+                        color = Color(0xFFEAB308),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Center Column: Game Status (Left: X • 8-Ball)
+                val has8Ball = engine.balls.any { it.id == 8 }
+                Text(
+                    text = "Left: $remainingObjects • ${if (has8Ball) "8-Ball" else "No 8-Ball"}",
+                    fontSize = 10.sp,
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                // Right Column: Player 2 / Opponent group info
+                val p2Label = if (engine.currentMode == GameMode.PLAYER_VS_BOT) {
+                    "Bot"
+                } else if (engine.currentMode == GameMode.ONLINE_MULTIPLAYER) {
+                    if (engine.myRole == "P2") "You (P2)" else "Opponent (P2)"
+                } else {
+                    "Player 2"
+                }
+
+                if (engine.currentMode != GameMode.PRACTICE) {
+                    if (engine.player2Group != null) {
                         Text(
                             text = "$p2Label: ${engine.player2Group.toString().lowercase().replaceFirstChar { it.uppercase() }}s",
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             color = Color(0xFFA855F7),
                             fontWeight = FontWeight.Bold
                         )
                     } else {
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Table is Open",
-                                fontSize = 11.sp,
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontWeight = FontWeight.Medium,
-                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                            )
-                        }
+                        Text(
+                            text = "Table Open",
+                            fontSize = 10.sp,
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontWeight = FontWeight.Medium
+                        )
                     }
+                } else {
+                    Spacer(modifier = Modifier.width(1.dp))
                 }
             }
         }
@@ -1482,7 +1970,7 @@ fun EventLogTicker(engine: GameEngine) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(130.dp)
+            .height(80.dp)
             .shadow(6.dp),
         color = Color(0xFF0F172A),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
@@ -1490,14 +1978,14 @@ fun EventLogTicker(engine: GameEngine) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .padding(horizontal = 20.dp, vertical = 6.dp)
         ) {
             Text(
                 text = "MATCH LOGS",
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF64748B),
-                modifier = Modifier.padding(bottom = 6.dp)
+                modifier = Modifier.padding(bottom = 2.dp)
             )
 
             if (engine.eventLogs.isEmpty()) {
@@ -1507,7 +1995,7 @@ fun EventLogTicker(engine: GameEngine) {
                 ) {
                     Text(
                         text = "Logs will appear here once the match starts",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.25f),
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     )
@@ -1515,7 +2003,7 @@ fun EventLogTicker(engine: GameEngine) {
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     items(engine.eventLogs) { log ->
                         Row(
@@ -1525,13 +2013,13 @@ fun EventLogTicker(engine: GameEngine) {
                             Text(
                                 text = "•",
                                 color = Color(0xFF22D3EE),
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 modifier = Modifier.padding(end = 8.dp)
                             )
                             Text(
                                 text = log,
                                 color = Color.White.copy(alpha = 0.85f),
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }
