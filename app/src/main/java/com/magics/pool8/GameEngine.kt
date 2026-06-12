@@ -72,7 +72,7 @@ object SoundManager {
             val t = i.toFloat() / sampleRate
             val frequency = 1750f
             // Exponential decay to simulate solid phenolic billiard ball collision
-            val decay = Math.exp(-t * 220.0) 
+            val decay = Math.exp(-t * 220.0)
             val sine = Math.sin(2.0 * Math.PI * frequency * t)
             val noise = (Math.random() * 2.0 - 1.0) * 0.08 // Transient hit click noise
 
@@ -98,7 +98,7 @@ object SoundManager {
 
             audioTrack.write(buffer, 0, buffer.size)
             audioTrack.play()
-            
+
             // Release the track after playing
             CoroutineScope(Dispatchers.IO).launch {
                 delay(100L)
@@ -184,7 +184,7 @@ class GameEngine {
         eventLogs.clear()
         addLog("Match Started: ${mode.name.replace("_", " ")}")
         resetBotAnimationState()
-        
+
         disconnectWebSocket()
         if (mode == GameMode.ONLINE_MULTIPLAYER) {
             connectWebSocket()
@@ -248,7 +248,7 @@ class GameEngine {
                                 val isOpponentNextTurn = json.getBoolean("isPlayerTurn")
                                 val p1GroupStr = json.optString("player1Group", "null")
                                 val p2GroupStr = json.optString("player2Group", "null")
-                                
+
                                 player1Group = if (p1GroupStr == "null" || p1GroupStr.isEmpty()) null else BallGroup.valueOf(p1GroupStr)
                                 player2Group = if (p2GroupStr == "null" || p2GroupStr.isEmpty()) null else BallGroup.valueOf(p2GroupStr)
 
@@ -335,7 +335,8 @@ class GameEngine {
     private fun addLog(msg: String) {
         eventLogs.add(0, msg)
         if (eventLogs.size > 8) {
-            eventLogs.removeLast()
+            // Replace Kotlin removeLast with removeAt for Android 15 compatibility
+            eventLogs.removeAt(eventLogs.lastIndex)
         }
     }
 
@@ -347,22 +348,22 @@ class GameEngine {
         // Standard 15-Ball Triangle Rack
         // Row 1 (Apex):
         balls.add(PoolBall(1, 500f, 500f, 0f, 0f, 0xFFEAB308)) // Solid Yellow
-        
+
         // Row 2:
         balls.add(PoolBall(2, 470f, 440f, 0f, 0f, 0xFF3B82F6)) // Solid Blue
         balls.add(PoolBall(9, 530f, 440f, 0f, 0f, 0xFFEAB308)) // Stripe Yellow
-        
+
         // Row 3:
         balls.add(PoolBall(10, 440f, 380f, 0f, 0f, 0xFF3B82F6)) // Stripe Blue
         balls.add(PoolBall(8, 500f, 380f, 0f, 0f, 0xFF000000)) // Black 8-Ball
         balls.add(PoolBall(3, 560f, 380f, 0f, 0f, 0xFFEF4444)) // Solid Red
-        
+
         // Row 4:
         balls.add(PoolBall(11, 410f, 320f, 0f, 0f, 0xFFEF4444)) // Stripe Red
         balls.add(PoolBall(4, 470f, 320f, 0f, 0f, 0xFF8B5CF6)) // Solid Purple
         balls.add(PoolBall(12, 530f, 320f, 0f, 0f, 0xFF8B5CF6)) // Stripe Purple
         balls.add(PoolBall(5, 590f, 320f, 0f, 0f, 0xFFF97316)) // Solid Orange
-        
+
         // Row 5:
         balls.add(PoolBall(6, 380f, 260f, 0f, 0f, 0xFF22C55E)) // Solid Green
         balls.add(PoolBall(13, 440f, 260f, 0f, 0f, 0xFFF97316)) // Stripe Orange
